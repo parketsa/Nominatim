@@ -171,13 +171,16 @@ class SetupAll:
                                             drop=args.no_updates,
                                             ignore_errors=args.ignore_errors)
 
-            LOG.warning('Importing wikipedia importance data')
-            data_path = Path(args.config.WIKIPEDIA_DATA_PATH or args.project_dir)
-            if refresh.import_wikipedia_articles(args.config.get_libpq_dsn(),
-                                                 data_path) > 0:
-                LOG.error('Wikipedia importance dump file not found. '
-                          'Calculating importance values of locations will not '
-                          'use Wikipedia importance data.')
+            if args.config.get_bool('IMPORT_WIKIPEDIA'):
+                LOG.warning('Importing wikipedia importance data')
+                data_path = Path(args.config.WIKIPEDIA_DATA_PATH or args.project_dir)
+                if refresh.import_wikipedia_articles(args.config.get_libpq_dsn(),
+                                                     data_path) > 0:
+                    LOG.error('Wikipedia importance dump file not found. '
+                              'Calculating importance values of locations will not '
+                              'use Wikipedia importance data.')
+            else:
+                LOG.warning('Skipping wikipedia importance data import.')
 
             LOG.warning('Importing secondary importance raster data')
             if refresh.import_secondary_importance(args.config.get_libpq_dsn(),
