@@ -14,6 +14,7 @@ RUN apt-get update \
         python3-dev \
         python3-pip \
         python3-venv \
+        curl \
         libicu-dev \
         libpq-dev \
         osm2pgsql \
@@ -44,23 +45,26 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir \
         ./packaging/nominatim-db \
         ./packaging/nominatim-api \
+        osmium \
     && /opt/venv/bin/pip install --no-cache-dir \
         uvicorn \
         falcon \
         starlette
 
 RUN useradd -m -u 1000 -d /var/lib/nominatim nominatim \
-    && mkdir -p /var/lib/nominatim \
-    && chown -R nominatim:nominatim /var/lib/nominatim
+    && mkdir -p /var/lib/nominatim /nominatim/data /var/cache/nominatim \
+    && chown -R nominatim:nominatim /var/lib/nominatim /nominatim /var/cache/nominatim
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY utils/nominatim-env.sh /usr/local/bin/nominatim-env.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/nominatim-env.sh
 
 USER nominatim
 ENV PATH=/opt/venv/bin:$PATH
-ENV NOMINATIM_PROJECT_DIR=/var/lib/nominatim
-WORKDIR /var/lib/nominatim
+ENV NOMINATIM_PROJECT_DIR=/nominatim/data
+WORKDIR /nominatim/data
 
-EXPOSE 8088
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["serve", "--server", "0.0.0.0:8088", "--engine", "falcon"]
+CMD ["serve", "--server", "0.0.0.0:8080", "--engine", "falcon"]
