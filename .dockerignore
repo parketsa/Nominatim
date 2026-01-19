@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.vscode
+__pycache__
+*.pyc
+*.log
+docs
+munin
+test
+vagrant
+Vagrantfile
