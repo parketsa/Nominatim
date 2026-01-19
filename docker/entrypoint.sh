@@ -24,12 +24,53 @@ if [ -n "${NOMINATIM_RECHECK_INTERVAL:-}" ] && [ -z "${NOMINATIM_REPLICATION_REC
   export NOMINATIM_REPLICATION_RECHECK_INTERVAL="$NOMINATIM_RECHECK_INTERVAL"
 fi
 
+if [ -n "${NOMINATIM_PASSWORD:-}" ] && [ -z "${PGPASSWORD:-}" ]; then
+  export PGPASSWORD="$NOMINATIM_PASSWORD"
+fi
+
 if [ "$#" -eq 0 ]; then
   exec nominatim --help
 fi
 
 to_lower() {
   printf '%s' "$1" | tr 'A-Z' 'a-z'
+}
+
+db_conninfo() {
+  if [ -z "${NOMINATIM_DATABASE_DSN:-}" ]; then
+    return 1
+  fi
+
+  printf '%s' "$NOMINATIM_DATABASE_DSN" | sed 's/^pgsql://; s/;/ /g'
+}
+
+sql_escape_literal() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
+sql_escape_ident() {
+  printf '%s' "$1" | sed 's/\"/\"\"/g'
+}
+
+ensure_web_user() {
+  webuser="${NOMINATIM_DATABASE_WEBUSER:-www-data}"
+
+  conninfo=$(db_conninfo) || return 0
+
+  webuser_lit=$(sql_escape_literal "$webuser")
+  webuser_ident=$(sql_escape_ident "$webuser")
+
+  psql "$conninfo dbname=postgres" -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$webuser_lit'" \
+    | grep -q 1 && return 0
+
+  if [ -n "${NOMINATIM_PASSWORD:-}" ]; then
+    webpass_lit=$(sql_escape_literal "$NOMINATIM_PASSWORD")
+    psql "$conninfo dbname=postgres" -v ON_ERROR_STOP=1 \
+      -c "CREATE ROLE \"$webuser_ident\" LOGIN PASSWORD '$webpass_lit'"
+  else
+    psql "$conninfo dbname=postgres" -v ON_ERROR_STOP=1 \
+      -c "CREATE ROLE \"$webuser_ident\" LOGIN"
+  fi
 }
 
 maybe_import() {
@@ -43,6 +84,7 @@ maybe_import() {
   fi
 
   echo "Running initial import"
+  ensure_web_user
   /usr/local/bin/nominatim-env.sh import
 }
 
@@ -91,6 +133,7 @@ case "$1" in
     shift
 
     if [ "$cmd" = "import" ]; then
+      ensure_web_user
       if [ -n "${NOMINATIM_THREADS:-}" ] \
         && ! echo " $* " | grep -Eq ' (-j|--threads)( |$)'; then
         set -- "$@" -j "$NOMINATIM_THREADS"

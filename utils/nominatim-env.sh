@@ -140,27 +140,27 @@ case "$ACTION" in
       fi
     fi
 
-    run_nominatim --project-dir "$PROJECT_DIR" -j "$THREADS" \
-      import --osm-file "$OSMFILE"
+    run_nominatim import --project-dir "$PROJECT_DIR" -j "$THREADS" \
+      --osm-file "$OSMFILE"
 
-    run_nominatim --project-dir "$PROJECT_DIR" -j "$THREADS" index
-    run_nominatim --project-dir "$PROJECT_DIR" admin --check-database
+    run_nominatim index --project-dir "$PROJECT_DIR" -j "$THREADS"
+    run_nominatim admin --project-dir "$PROJECT_DIR" --check-database
 
     if [ -n "$REPLICATION_URL" ]; then
-      run_nominatim --project-dir "$PROJECT_DIR" replication --init
+      run_nominatim replication --project-dir "$PROJECT_DIR" --init
     fi
     ;;
 
   replication)
     case "$(printf '%s' "$UPDATE_MODE" | tr 'A-Z' 'a-z')" in
       continuous)
-        run_nominatim --project-dir "$PROJECT_DIR" replication
+        run_nominatim replication --project-dir "$PROJECT_DIR"
         ;;
       once)
-        run_nominatim --project-dir "$PROJECT_DIR" replication --once
+        run_nominatim replication --project-dir "$PROJECT_DIR" --once
         ;;
       catch-up)
-        run_nominatim --project-dir "$PROJECT_DIR" replication --catch-up
+        run_nominatim replication --project-dir "$PROJECT_DIR" --catch-up
         ;;
       none|"")
         echo "UPDATE_MODE is none; skipping replication"
@@ -172,11 +172,11 @@ case "$ACTION" in
     ;;
 
   replication-init)
-    run_nominatim --project-dir "$PROJECT_DIR" replication --init
+    run_nominatim replication --project-dir "$PROJECT_DIR" --init
     ;;
 
   check)
-    run_nominatim --project-dir "$PROJECT_DIR" admin --check-database
+    run_nominatim admin --project-dir "$PROJECT_DIR" --check-database
     ;;
 
   *)
