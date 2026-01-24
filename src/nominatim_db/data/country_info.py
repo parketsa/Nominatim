@@ -11,7 +11,7 @@ from typing import Dict, Any, Iterable, Tuple, Optional, Container, overload
 from pathlib import Path
 
 from ..db import utils as db_utils
-from ..db.connection import connect, Connection, register_hstore
+from ..db.connection import connect, Connection, register_hstore, table_exists
 from ..errors import UsageError
 from ..config import Configuration
 from ..tokenizer.base import AbstractTokenizer
@@ -114,20 +114,26 @@ def setup_country_tables(dsn: str, sql_dir: Path, ignore_partitions: bool = Fals
     """ Create and populate the tables with basic static data that provides
         the background for geocoding. Data is assumed to not yet exist.
     """
-    db_utils.execute_file(dsn, sql_dir / 'country_osm_grid.sql.gz')
-
-    params = []
-    for ccode, props in _COUNTRY_INFO.items():
-        if ccode is not None and props is not None:
-            if ignore_partitions:
-                partition = 0
-            else:
-                partition = props.get('partition', 0)
-            lang = props['languages'][0] if len(
-                props['languages']) == 1 else None
-
-            params.append((ccode, props['names'], lang, partition))
     with connect(dsn) as conn:
+        if not table_exists(conn, 'country_osm_grid'):
+            db_utils.execute_file(dsn, sql_dir / 'country_osm_grid.sql.gz')
+
+    with connect(dsn) as conn:
+        if table_exists(conn, 'country_name'):
+            return
+
+        params = []
+        for ccode, props in _COUNTRY_INFO.items():
+            if ccode is not None and props is not None:
+                if ignore_partitions:
+                    partition = 0
+                else:
+                    partition = props.get('partition', 0)
+                lang = props['languages'][0] if len(
+                    props['languages']) == 1 else None
+
+                params.append((ccode, props['names'], lang, partition))
+
         register_hstore(conn)
         with conn.cursor() as cur:
             cur.execute(
