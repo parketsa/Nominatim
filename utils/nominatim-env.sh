@@ -104,8 +104,12 @@ case "$ACTION" in
 
     if [ -n "$PBF_URL" ]; then
       OSMFILE="${PROJECT_DIR}/data.osm.pbf"
-      echo "Downloading PBF from $PBF_URL"
-      download "$PBF_URL" "$OSMFILE"
+      if [ ! -f "$OSMFILE" ]; then
+        echo "Downloading PBF from $PBF_URL"
+        download "$PBF_URL" "$OSMFILE"
+      else
+        echo "Using existing PBF file: $OSMFILE"
+      fi
     elif [ -n "$PBF_PATH" ]; then
       OSMFILE="$PBF_PATH"
     else
