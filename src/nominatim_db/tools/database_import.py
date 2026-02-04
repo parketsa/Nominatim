@@ -190,6 +190,8 @@ def create_tables(conn: Connection, config: Configuration, reverse_only: bool = 
 
     sql.run_sql_file(conn, 'tables.sql')
 
+    sql.run_sql_file(conn, 'grants.sql')
+
 
 def create_table_triggers(conn: Connection, config: Configuration) -> None:
     """ Create the triggers for the tables. The trigger functions must already
@@ -258,7 +260,7 @@ async def load_data(dsn: str, threads: int) -> None:
                                       total=pysql.Literal(placex_threads),
                                       mod=pysql.Literal(imod)), None)
 
-        # Interpolations need to be copied seperately
+        # Interpolations need to be copied separately
         await pool.put_query("""
                 INSERT INTO location_property_osmline (osm_id, address, linegeo)
                   SELECT osm_id, address, geometry FROM place
