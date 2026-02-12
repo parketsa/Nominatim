@@ -10,7 +10,6 @@ Functions for setting up and importing a new Nominatim database.
 from typing import Tuple, Optional, Union, Sequence, MutableMapping, Any
 import logging
 import os
-import subprocess
 import asyncio
 from pathlib import Path
 
@@ -50,6 +49,44 @@ def _require_loaded(extension_name: str, conn: Connection) -> None:
             raise UsageError(f'{extension_name} is not loaded.')
 
 
+def _get_dbname(dsn: str) -> str:
+    params = psycopg.conninfo.conninfo_to_dict(dsn)
+    dbname = params.get('dbname') or params.get('user')
+    if not dbname:
+        env = get_pg_env(dsn, base_env={})
+        dbname = env.get('PGDATABASE') or env.get('PGUSER')
+    if not dbname:
+        raise UsageError("Database name missing in connection string.")
+    return str(dbname)
+
+
+def _ensure_database(dsn: str) -> None:
+    dbname = _get_dbname(dsn)
+    last_error: Optional[Exception] = None
+    for maintenance_db in ('postgres', 'template1'):
+        try:
+            with connect(dsn, dbname=maintenance_db, autocommit=True) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname, ))
+                    if cur.fetchone():
+                        LOG.info("Database %s already exists.", dbname)
+                        return
+                    try:
+                        cur.execute(pysql.SQL('CREATE DATABASE {}')
+                                    .format(pysql.Identifier(dbname)))
+                    except psycopg.errors.DuplicateDatabase:
+                        LOG.info("Database %s already exists.", dbname)
+                    return
+        except UsageError as exc:
+            last_error = exc
+        except psycopg.Error as exc:
+            last_error = exc
+            break
+
+    if last_error is not None:
+        raise UsageError('Creating new database failed.') from last_error
+
+
 def check_existing_database_plugins(dsn: str) -> None:
     """ Check that the database has the required plugins installed."""
     with connect(dsn) as conn:
@@ -66,20 +103,15 @@ def setup_database_skeleton(dsn: str, rouser: Optional[str] = None) -> None:
     """ Create a new database for Nominatim and populate it with the
         essential extensions.
 
-        The function fails when the database already exists or Postgresql or
-        PostGIS versions are too old.
-
-        Uses `createdb` to create the database.
+        The function skips database creation when the database already exists
+        and fails when PostgreSQL or PostGIS versions are too old.
 
         If 'rouser' is given, then the function also checks that the user
         with that given name exists.
 
         Requires superuser rights by the caller.
     """
-    proc = subprocess.run(['createdb'], env=get_pg_env(dsn), check=False)
-
-    if proc.returncode != 0:
-        raise UsageError('Creating new database failed.')
+    _ensure_database(dsn)
 
     with connect(dsn) as conn:
         _require_version('PostgreSQL server',
@@ -115,7 +147,8 @@ def import_osm_data(osm_files: Union[Path, Sequence[Path]],
     """
     options['import_file'] = osm_files
     options['append'] = False
-    options['threads'] = 1
+    threads = options.get('threads') or 1
+    options['threads'] = max(1, int(threads))
 
     if not options['flatnode_file'] and options['osm2pgsql_cache'] == 0:
         # Make some educated guesses about cache size based on the size

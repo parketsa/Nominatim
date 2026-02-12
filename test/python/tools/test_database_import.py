@@ -71,9 +71,13 @@ class TestDatabaseSetup:
             database_import.setup_database_skeleton(f'dbname={self.DBNAME}')
 
 
-def test_setup_skeleton_already_exists(temp_db):
-    with pytest.raises(UsageError):
-        database_import.setup_database_skeleton(f'dbname={temp_db}')
+def test_setup_skeleton_already_exists(temp_db, temp_db_cursor):
+    temp_db_cursor.execute('CREATE TABLE keep_existing_data (id INT PRIMARY KEY)')
+    temp_db_cursor.execute('INSERT INTO keep_existing_data VALUES (42)')
+
+    database_import.setup_database_skeleton(f'dbname={temp_db}')
+
+    assert temp_db_cursor.scalar('SELECT count(*) FROM keep_existing_data') == 1
 
 
 def test_import_osm_data_simple(table_factory, osm2pgsql_options, capfd):
