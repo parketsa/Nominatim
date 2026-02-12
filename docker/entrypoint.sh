@@ -1,6 +1,62 @@
 #!/bin/sh
 set -e
 
+runtime_home_for_user() {
+  getent passwd "$1" 2>/dev/null | cut -d: -f6
+}
+
+switch_to_runtime_user() {
+  if [ "$(id -u)" -ne 0 ] || [ "${NOMINATIM_ALLOW_ROOT:-}" = "1" ]; then
+    return 0
+  fi
+
+  runtime_user="${NOMINATIM_RUNTIME_USER:-nominatim}"
+  if [ "$runtime_user" = "root" ]; then
+    return 0
+  fi
+
+  if ! id "$runtime_user" >/dev/null 2>&1; then
+    echo "Configured runtime user '$runtime_user' does not exist." >&2
+    exit 2
+  fi
+
+  if ! command -v runuser >/dev/null 2>&1; then
+    echo "runuser is required to drop root privileges in entrypoint." >&2
+    exit 2
+  fi
+
+  runtime_home=$(runtime_home_for_user "$runtime_user")
+  if [ -n "$runtime_home" ]; then
+    export HOME="$runtime_home"
+  fi
+
+  exec runuser -u "$runtime_user" --preserve-environment -- "$0" "$@"
+}
+
+normalize_runtime_env() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ -z "${HOME:-}" ] || [ "$HOME" = "/root" ]; then
+    runtime_home=$(runtime_home_for_user "$(id -u)")
+    if [ -n "$runtime_home" ]; then
+      export HOME="$runtime_home"
+    fi
+  fi
+
+  if [ "${PGSSLCERT:-}" = "/root/.postgresql/postgresql.crt" ]; then
+    unset PGSSLCERT
+  fi
+
+  if [ "${PGSSLKEY:-}" = "/root/.postgresql/postgresql.key" ]; then
+    unset PGSSLKEY
+  fi
+}
+
+switch_to_runtime_user "$@"
+normalize_runtime_env
+
 PROJECT_DIR="${NOMINATIM_PROJECT_DIR:-/nominatim/data}"
 mkdir -p "$PROJECT_DIR"
 

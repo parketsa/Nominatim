@@ -61,6 +61,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/nominatim-env.sh
 
 USER nominatim
+ENV HOME=/var/lib/nominatim
 ENV PATH=/opt/venv/bin:$PATH
 ENV NOMINATIM_PROJECT_DIR=/nominatim/data
 WORKDIR /nominatim/data

@@ -10,6 +10,31 @@ NOMINATIM_CLI_FALLBACK="${REPO_ROOT}/nominatim-cli.py"
 PROJECT_DIR="${NOMINATIM_PROJECT_DIR:-${PROJECT_DIR:-$PWD}}"
 ACTION="${1:-import}"
 
+runtime_home_for_user() {
+  getent passwd "$1" 2>/dev/null | cut -d: -f6
+}
+
+normalize_runtime_env() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ -z "${HOME:-}" ] || [ "$HOME" = "/root" ]; then
+    runtime_home=$(runtime_home_for_user "$(id -u)")
+    if [ -n "$runtime_home" ]; then
+      export HOME="$runtime_home"
+    fi
+  fi
+
+  if [ "${PGSSLCERT:-}" = "/root/.postgresql/postgresql.crt" ]; then
+    unset PGSSLCERT
+  fi
+
+  if [ "${PGSSLKEY:-}" = "/root/.postgresql/postgresql.key" ]; then
+    unset PGSSLKEY
+  fi
+}
+
 die() {
   echo "error: $*" >&2
   exit 2
@@ -66,6 +91,7 @@ run_nominatim() {
   die "nominatim not found in PATH and no nominatim-cli.py fallback available"
 }
 
+normalize_runtime_env
 mkdir -p "$PROJECT_DIR"
 
 PBF_URL="${NOMINATIM_PBF_URL:-${PBF_URL:-}}"

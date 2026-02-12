@@ -7,6 +7,8 @@
 """
 Tests for specialised connection and cursor classes.
 """
+from types import SimpleNamespace
+
 import pytest
 import psycopg
 
@@ -132,3 +134,40 @@ def test_get_pg_env_ignore_unknown():
     env = nc.get_pg_env('client_encoding=stuff', base_env={})
 
     assert env == {}
+
+
+def test_get_pg_env_fixes_root_home_for_non_root(monkeypatch):
+    monkeypatch.setattr(nc.os, 'getuid', lambda: 1000)
+    if nc.pwd is None:
+        pytest.skip("pwd module not available")
+    monkeypatch.setattr(nc.pwd, 'getpwuid',
+                        lambda uid: SimpleNamespace(pw_dir='/var/lib/nominatim'))
+
+    env = nc.get_pg_env('sslmode=require', base_env={'HOME': '/root'})
+
+    assert env['HOME'] == '/var/lib/nominatim'
+
+
+def test_get_pg_env_drops_root_default_ssl_client_cert_paths(monkeypatch):
+    monkeypatch.setattr(nc.os, 'getuid', lambda: 1000)
+    if nc.pwd is None:
+        pytest.skip("pwd module not available")
+    monkeypatch.setattr(nc.pwd, 'getpwuid',
+                        lambda uid: SimpleNamespace(pw_dir='/var/lib/nominatim'))
+
+    env = nc.get_pg_env('sslmode=require', base_env={
+        'HOME': '/root',
+        'PGSSLCERT': '/root/.postgresql/postgresql.crt',
+        'PGSSLKEY': '/root/.postgresql/postgresql.key',
+    })
+
+    assert 'PGSSLCERT' not in env
+    assert 'PGSSLKEY' not in env
+
+
+def test_get_pg_env_keeps_explicit_ssl_client_cert_paths():
+    env = nc.get_pg_env('sslmode=require sslcert=/tmp/client.crt sslkey=/tmp/client.key',
+                        base_env={})
+
+    assert env['PGSSLCERT'] == '/tmp/client.crt'
+    assert env['PGSSLKEY'] == '/tmp/client.key'

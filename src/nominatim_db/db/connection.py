@@ -7,9 +7,13 @@
 """
 Specialised connection and cursor functions.
 """
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, MutableMapping
 import logging
 import os
+try:
+    import pwd
+except ImportError:  # pragma: no cover
+    pwd = None  # type: ignore[assignment]
 
 import psycopg
 import psycopg.types.hstore
@@ -22,6 +26,52 @@ LOG = logging.getLogger()
 
 Cursor = psycopg.Cursor[Any]
 Connection = psycopg.Connection[Any]
+
+_ROOT_HOME = '/root'
+_ROOT_DEFAULT_SSLCERT = '/root/.postgresql/postgresql.crt'
+_ROOT_DEFAULT_SSLKEY = '/root/.postgresql/postgresql.key'
+
+
+def _normalize_home_env(env: MutableMapping[str, str]) -> None:
+    """Ensure that non-root users do not accidentally run with HOME=/root."""
+    uid = os.getuid()
+    if uid == 0:
+        return
+
+    home = env.get('HOME')
+    if home and home != _ROOT_HOME:
+        return
+
+    if pwd is None:
+        return
+
+    try:
+        user_home = pwd.getpwuid(uid).pw_dir
+    except KeyError:
+        return
+
+    if user_home and user_home != _ROOT_HOME:
+        env['HOME'] = user_home
+
+
+def _drop_unconfigured_root_ssl_client_cert_paths(env: MutableMapping[str, str],
+                                                   dsn: str) -> None:
+    """Drop default root client-cert paths unless they were explicitly configured."""
+    try:
+        params = psycopg.conninfo.conninfo_to_dict(dsn)
+    except psycopg.Error:
+        params = {}
+
+    if 'sslcert' not in params and env.get('PGSSLCERT') == _ROOT_DEFAULT_SSLCERT:
+        env.pop('PGSSLCERT', None)
+
+    if 'sslkey' not in params and env.get('PGSSLKEY') == _ROOT_DEFAULT_SSLKEY:
+        env.pop('PGSSLKEY', None)
+
+
+def _sanitize_runtime_pg_env(env: MutableMapping[str, str], dsn: str) -> None:
+    _normalize_home_env(env)
+    _drop_unconfigured_root_ssl_client_cert_paths(env, dsn)
 
 
 def execute_scalar(conn: Connection, sql: psycopg.abc.Query, args: Any = None) -> Any:
@@ -137,6 +187,8 @@ def connect(dsn: str, **kwargs: Any) -> Connection:
         When used outside a context manager, use the `connection` attribute
         to get the connection.
     """
+    _sanitize_runtime_pg_env(os.environ, dsn)
+
     try:
         return psycopg.connect(dsn, row_factory=psycopg.rows.namedtuple_row, **kwargs)
     except psycopg.OperationalError as err:
@@ -183,6 +235,7 @@ def get_pg_env(dsn: str,
         environment.
     """
     env = dict(base_env if base_env is not None else os.environ)
+    _sanitize_runtime_pg_env(env, dsn)
 
     for param, value in psycopg.conninfo.conninfo_to_dict(dsn).items():
         if param in _PG_CONNECTION_STRINGS:
