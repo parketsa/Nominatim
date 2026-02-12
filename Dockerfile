@@ -49,7 +49,8 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir \
         uvicorn \
         falcon \
-        starlette
+        starlette \
+    && chmod +x /opt/venv/bin/nominatim
 
 RUN useradd -m -u 1000 -d /var/lib/nominatim nominatim \
     && mkdir -p /var/lib/nominatim /nominatim/data /var/cache/nominatim \
